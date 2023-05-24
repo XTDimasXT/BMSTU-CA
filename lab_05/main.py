@@ -1,121 +1,196 @@
-import sympy as sym
 import numpy as np
-import math
 import matplotlib.pyplot as plt
-from scipy.linalg import solve
-
-N = 3
-eps = 1e-3
-
-def Newton(F, Jacobian):
-    curValues = np.array([0.5, 0.5, 0.5], dtype="float")
-
-    FCur = F(*curValues)
-    JacobianCur = Jacobian(*curValues)
-
-    delta = solve(JacobianCur, FCur).reshape((N, ))
-    curValues += delta
-    
-    while np.linalg.norm(delta) > eps:
-        
-        curValues -= delta
-
-        FCur = F(*curValues)
-        JacobianCur = Jacobian(*curValues)
-
-        delta = solve(JacobianCur, FCur).reshape((N, ))
-
-    return curValues
 
 
-def Newton_3rd(F, Jacobian, initValues):
-    curValues = np.array(initValues, dtype="float")
+def gaussElim(a, b):
+    n = len(b)
+    for k in range(0, n-1):
+        for i in range(k+1, n):
+            if a[i, k] != 0.0:
+                lam = a[i, k] / a[k, k]
+                a[i, k+1:n] = a[i, k+1:n] - lam*a[k, k+1:n]
+                b[i] = b[i] - lam*b[k]
+    for k in range(n-1, -1, -1):
+        b[k] = (b[k] - np.dot(a[k, k+1:n], b[k+1:n]))/a[k, k]
 
-    FCur = F(*curValues)
-    JacobianCur = Jacobian(*curValues)
-
-    delta = solve(JacobianCur, FCur).reshape((N + 1, ))
-    curValues += delta
-
-    while np.linalg.norm(delta) > eps:
-        
-        curValues -= delta
-
-        FCur = F(*curValues)
-        JacobianCur = Jacobian(*curValues)
-
-        delta = solve(JacobianCur, FCur).reshape((N + 1, ))
-
-    return curValues
+    return b
 
 
-def f(x):
-    return (1 / math.sqrt(2 * math.pi)) * math.exp(-(x ** 2) / 2)
+def system_solution(x_start, eps=1e-4):
+    x = x_start[0]  # count step s = 1
+    y = x_start[1]
+    z = x_start[2]
+
+    matrix = np.array(
+        [
+            [2 * x, 2 * y, 2 * z],
+            [4 * x, 2 * y, -4],
+            [6 * x, -4, 2 * z]
+        ]
+    )
+
+    b = np.array(
+        [
+            1 - (x ** 2 + y ** 2 + z ** 2),
+            4 * z - y ** 2 - 2 * x ** 2,
+            4 * y - 3 * x ** 2 - z ** 2
+        ]
+    )
+
+    delt_x, delt_y, delt_z = gaussElim(matrix, b)
+
+    cur_x = x + delt_x  # values on s step
+    cur_y = y + delt_y
+    cur_z = z + delt_z
+
+    x = cur_x
+    y = cur_y
+    z = cur_z
+
+    while (abs(max([delt_x / cur_x, delt_y / cur_y, delt_z / cur_z])) >= eps):
+        matrix = np.array([
+            [2 * x, 2 * y, 2 * z],
+            [4 * x, 2 * y, -4],
+            [6 * x, -4, 2 * z]
+        ])
+
+        b = np.array([
+            1 - (x ** 2 + y ** 2 + z ** 2),
+            4 * z - y ** 2 - 2 * x ** 2,
+            4 * y - 3 * x ** 2 - z ** 2
+        ])
+
+        delt_x, delt_y, delt_z = gaussElim(matrix, b)
+
+        cur_x = x + delt_x
+        cur_y = y + delt_y
+        cur_z = z + delt_z
+
+        x = cur_x
+        y = cur_y
+        z = cur_z
+
+    return (cur_x, cur_y, cur_z)
 
 
-def simpson(xCur):
-    steps = 200
-    step = xCur / (steps * 2)
-
-    xValues = np.array([i * step for i in range(steps * 2 + 1)])
-    funcValues = np.array([f(x_i) for x_i in xValues])
-
-    sumX1 = 4 * np.sum([funcValues[2 * i - 1] for i in range(1, steps)])
-    sumX2 = 2 * np.sum([funcValues[2 * i] for i in range(1, steps - 1)])
-
-    return (step / 3) * (funcValues[0] + funcValues[-1] + sumX1 + sumX2)
+def func(x):
+    return 2 / np.sqrt(2 * np.pi) * np.exp(-x ** 2 / 2)
 
 
-vars = ['x', 'y', 'z']
-funcs = ['x ** 2 + y ** 2 + z ** 2 - 1',
-         '2 * x ** 2 + y ** 2 - 4 * z',
-         '3 * x ** 2 - 4 * y + z ** 2']
+def count_integral(x, n=1000):
+    N = 2 * n
+    steps = [x / N * i for i in range(N + 1)]
 
-F = sym.Matrix(funcs)
-Jacobian = sym.Matrix(funcs).jacobian(vars)
+    h = x / N
 
-Jacobian = sym.lambdify(sym.symbols(vars), Jacobian)
-F = sym.lambdify(sym.symbols(vars), F)
+    s1 = 2 * np.sum([func(steps[2 * j]) for j in range(1, N // 2)])
+    s2 = 4 * np.sum([func(steps[2 * j - 1]) for j in range(1, N // 2 + 1)])
 
-values = Newton(F, Jacobian)
-space = ' '
+    return h / 3 * (func(steps[0]) + s1 + s2 + func(steps[N]))
 
-print("=====TASK #1=====")
-print(f"x: {values[0]:.5f}\ny: {values[1]:.5f}\nz: {values[2]:.5f}\n")
 
-print("=====TASK #2=====")
-ans = simpson(values[0])
-print(f"{ans:.5f}")
+def find_root(fx, eps=1e-6):
+    # bisection
+    # 0 - fx
 
-N = 100
-eps = 1e-3
+    def f(x):
+        return fx - count_integral(x)
 
-start = [0, 1]
-end = [1, 3]
+    left_bound = 0
+    right_bound = 5
 
-step = (end[0] - start[0]) / N
-xValues = np.array([i * step for i in range(N + 1)])
+    if f(left_bound) == 0:
+        return left_bound
 
-vars = [f'y{i}' for i in range(N + 1)]
+    if f(right_bound) == 0:
+        return right_bound
 
-funcs = [f'{vars[i - 1]} - 2 * {vars[i]} + {vars[i + 1]} - ({step} ** 2) * ({vars[i]} ** 3 + {xValues[i]} ** 2)' for i in range(1, N)]
-funcs.extend(['y0 - 1', f'y{N} - 3'])
+    if f(right_bound) < f(left_bound):
+        left_bound, right_bound = right_bound, left_bound
 
-F = sym.Matrix(funcs)
-Jacobian = sym.Matrix(funcs).jacobian(vars)
+    delt = right_bound - left_bound
 
-Jacobian = sym.lambdify(sym.symbols(vars), Jacobian)
-F = sym.lambdify(sym.symbols(vars), F)
+    x = left_bound + (right_bound - left_bound) / 2
 
-delta = (end[1] - start[1]) / (end[0] - start[0])
-initValues = [start[1] + delta * i * step for i in range(N + 1)]
+    while abs((right_bound - left_bound)) > eps * x + eps / 2:
 
-yValues = Newton_3rd(F, Jacobian, initValues)
+        x = (left_bound + right_bound) / 2
+        if (np.sign(f(left_bound)) != np.sign(f(x))):
+            right_bound = x
+        else:
+            left_bound = x
 
-plt.grid()
-plt.plot(xValues, initValues, label = "Init values")
-plt.plot(xValues, yValues, label = "Result values")
-plt.legend()
-plt.show()
-    
-print(yValues[30:40])
+    return x
+
+
+def der_equation_solution(n=100):
+    # y'' = x ^ 2 + y ^ 3
+    # 0 <= x <= 1
+    # y(0) = 1
+    # y(1) = 3
+
+    def f(x):  # init func
+        return 2 * x + 1
+
+    # Решим методом прогонки
+    h = 1 / n
+    omega = [0 + i * h for i in range(n + 1)]
+
+    y = [f(x) for x in omega]
+    N = len(omega)
+
+    delta_y = [1] * N
+
+    while (max([abs(delta_y[i] / y[i]) for i in range(N)])) >= 1e-6:
+        ksi = [0 for _ in range(N - 1)]
+        et = [0 for _ in range(N - 1)]
+
+        for i in range(1, len(ksi)):
+            A = 1
+            C = 1
+
+            B = A + C + 3 * h ** 2 * y[i]
+
+            F = y[i - 1] - 2 * y[i] + y[i + 1] - \
+                h**2*(omega[i] ** 2 + y[i] ** 3)
+
+            ksi[i] = C / (B - A * ksi[i - 1])
+            et[i] = (A * et[i - 1] + F) / (B - A * ksi[i - 1])
+
+        delta_y = [0 for _ in range(N)]
+        for i in range(len(ksi) - 1, 0, -1):
+            delta_y[i] = ksi[i] * delta_y[i + 1] + et[i]
+
+        for i in range(len(y)):
+            y[i] = y[i] + delta_y[i]
+
+    plt.plot(omega, y, label="Init")
+    plt.plot(omega, [f(x) for x in omega], label="Ans")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+
+def main():
+    print("Решения системы: ")
+    print("Корень №1: ", tuple(
+        map(lambda x: round(x, 6), system_solution(x_start=[+1, 0.1, 0.1]))))
+    print("Корень №2: ", tuple(
+        map(lambda x: round(x, 6), system_solution(x_start=[-1, 0.1, 0.1]))))
+
+    fx = float(input("Введите данное значение функции: "))
+    assert (fx < 1 and fx > -1)
+    print("Значение х для интеграла: ", find_root(fx))
+
+    # x = np.linspace(-20, 20, 100)
+    # y = [count_integral(i) for i in x]
+
+    # plt.plot(x, y)
+    # plt.grid(True)
+    # plt.show()
+
+    der_equation_solution()
+
+
+if __name__ == "__main__":
+    main()
